@@ -146,6 +146,7 @@ func (session *Session) SendPacket(data []byte) {
 func NewSession(settings SessionSettings, s *Socket) *Session {
 	session := &Session{
 		socket: s,
+		stop: make(chan struct{}),
 	}
 
 	session.SetSessionSetting(settings)

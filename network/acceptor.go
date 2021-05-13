@@ -90,3 +90,13 @@ func (acceptor *Acceptor) Stop() {
 	close(acceptor.stop)
 	acceptor.listener.Close()
 }
+
+func NewAcceptor(settings AcceptorSettings) *Acceptor {
+	acceptor := &Acceptor{
+		stop: make(chan struct{}),
+	}
+
+	acceptor.SetAcceptorSettings(settings)
+
+	return acceptor
+}

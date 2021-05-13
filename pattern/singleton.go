@@ -8,18 +8,41 @@ type Singleton interface {
 	Get() (interface{}, bool)
 }
 
-func NewSingleton(initFunc SingletonInitFunc) Singleton {
+type SingletonSettings struct {
+	OnInit SingletonInitFunc
+	DisableMutex bool
+}
+
+func NewSingleton(settings SingletonSettings) Singleton {
 	return &singletonImpl{
-		init: initFunc,
+		init: settings.OnInit,
+		hasDisableMutex: settings.DisableMutex,
 	}
 }
 
 type singletonImpl struct {
-	sync.Mutex
+	mutex sync.Mutex
 
+	hasDisableMutex bool
 	instance interface{}
 	init SingletonInitFunc
 	hasInitialized bool
+}
+
+func (s *singletonImpl) Lock() {
+	if s.hasDisableMutex {
+		return
+	}
+
+	s.mutex.Lock()
+}
+
+func (s *singletonImpl) Unlock() {
+	if s.hasDisableMutex {
+		return
+	}
+
+	s.mutex.Unlock()
 }
 
 func (s *singletonImpl) Get() (interface{}, bool) {
