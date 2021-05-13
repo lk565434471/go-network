@@ -2,36 +2,43 @@ package network
 
 import (
 	"net"
-	"strconv"
 )
 
 type connectorConnectedFunc func(connector *Connector)
+type connectorDisConnected func(connector *Connector, session *Session)
 type connectorErrorFunc func(connector *Connector, err error)
 
 type ConnectorSettings struct {
 	OnConnected connectorConnectedFunc
-	OnError     connectorErrorFunc
+	OnDisconnected connectorDisConnected
+	OnError connectorErrorFunc
 
 	SessionSettings SessionSettings
 }
 
 type Connector struct {
-	id int64
 	session *Session
 
 	onConnected connectorConnectedFunc
-	onError     connectorErrorFunc
+	onDisconnected connectorDisConnected
+	onError connectorErrorFunc
 
 	sessionSettings SessionSettings
 }
 
 func (connector *Connector) SetConnectorSettings(settings ConnectorSettings) {
 	connector.onConnected = settings.OnConnected
+	connector.onDisconnected = settings.OnDisconnected
 	connector.onError = settings.OnError
 	connector.sessionSettings = settings.SessionSettings
 
 	if connector.onConnected == nil {
 		connector.onConnected = func(connector *Connector) {
+		}
+	}
+
+	if connector.onDisconnected == nil {
+		connector.onDisconnected = func(connector *Connector, session *Session) {
 		}
 	}
 
@@ -42,7 +49,7 @@ func (connector *Connector) SetConnectorSettings(settings ConnectorSettings) {
 }
 
 func (connector *Connector) Connect(host string, port int) bool {
-	address := host + ":" + strconv.Itoa(port)
+	address := ComposeAddressByHostAndPort(host, port)
 	conn, err := net.Dial("tcp", address)
 
 	if err != nil {
@@ -51,26 +58,18 @@ func (connector *Connector) Connect(host string, port int) bool {
 	}
 
 	s := NewSocket(conn)
-	session := NewSession(connector.sessionSettings, 0, s)
+	session := NewSession(connector.sessionSettings, s)
 	connector.session = session
 
 	return true
 }
 
 func (connector *Connector) Start() {
-	connector.doRecvPacket()
+	connector.session.doRecvPacket()
 }
 
-func (connector *Connector) doRecvPacket() {
-	connector.session.Start()
-}
-
-func (connector *Connector) SetId(id int64) {
-	connector.id = id
-}
-
-func (connector *Connector) GetId() int64 {
-	return connector.id
+func (connector *Connector) Stop() {
+	connector.session.Stop()
 }
 
 func NewConnector(settings ConnectorSettings) *Connector {

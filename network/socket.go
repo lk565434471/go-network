@@ -20,18 +20,21 @@ type Socket struct {
 }
 
 func (s *Socket) Connect(host string, port int) bool {
-	address := host + ":" + strconv.Itoa(port)
+	address := ComposeAddressByHostAndPort(host, port)
 	conn, err := net.Dial("tcp", address)
 
 	if err != nil {
 		return false
 	}
 
-	localAddressParts := strings.Split(conn.LocalAddr().String(), ":")
-	localPort, _ := strconv.Atoi(localAddressParts[1])
+	localHost, localPort, err := SplitHostAndPort(conn.LocalAddr().String())
+
+	if err != nil {
+		return false
+	}
 
 	s.conn = conn
-	s.LocalHost = localAddressParts[0]
+	s.LocalHost = localHost
 	s.LocalPort = localPort
 	s.RemoteHost = host
 	s.RemotePort = port
@@ -139,17 +142,42 @@ func buildPacket(data []byte) []byte {
 func NewSocket(conn net.Conn) *Socket {
 	s := &Socket{}
 
-	localAddressParts := strings.Split(conn.LocalAddr().String(), ":")
-	remoteAddressParts := strings.Split(conn.RemoteAddr().String(), ":")
+	localHost, localPort, err := SplitHostAndPort(conn.LocalAddr().String())
 
-	localPort, _ := strconv.Atoi(localAddressParts[1])
-	remotePort, _ := strconv.Atoi(remoteAddressParts[1])
+	if err != nil {
+		return nil
+	}
+
+	remoteHost, remotePort, err := SplitHostAndPort(conn.RemoteAddr().String())
+
+	if err != nil {
+		return nil
+	}
 
 	s.conn = conn
-	s.LocalHost = localAddressParts[0]
+	s.LocalHost = localHost
 	s.LocalPort = localPort
-	s.RemoteHost = remoteAddressParts[0]
+	s.RemoteHost = remoteHost
 	s.RemotePort = remotePort
 
 	return s
+}
+
+func ComposeAddressByHostAndPort(host string, port int) string {
+	return host + ":" + strconv.Itoa(port)
+}
+
+func SplitHostAndPort(address string) (string, int, error) {
+	addressParts := strings.Split(address, ":")
+	count := len(addressParts)
+
+	if count > 2 {
+		return "", 0, errors.New("too many parameters in address")
+	} else if count < 2 {
+		return "", 0, errors.New("missing port in address")
+	}
+
+	port, _:= strconv.Atoi(addressParts[1])
+
+	return addressParts[0], port, nil
 }

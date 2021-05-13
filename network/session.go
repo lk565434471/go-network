@@ -31,8 +31,8 @@ type SessionSettings struct {
 }
 
 type Session struct {
-	id     int64
 	socket *Socket
+	stop chan struct{}
 
 	maxRecvBuffSize int
 	maxSendBuffSize int
@@ -92,35 +92,41 @@ func (session *Session) SetSessionSetting(settings SessionSettings) {
 	}
 }
 
-func (session *Session) Close() error {
-	return session.socket.Close()
-}
-
 func (session *Session) Start() {
 	go session.doRecvPacket()
 }
 
+func (session *Session) Stop() {
+	close(session.stop)
+	session.socket.Close()
+}
+
 func (session *Session) doRecvPacket() {
 	for {
-		packetSize, err := session.OnParsePacketHeader(session.socket.conn, session.maxRecvBuffSize)
-
-		if err != nil {
-			session.OnError(session, err)
-			session.Close()
-			session.OnDisconnected(session)
+		select {
+		case <-session.stop:
 			return
+		default:
+			packetSize, err := session.OnParsePacketHeader(session.socket.conn, session.maxRecvBuffSize)
+
+			if err != nil {
+				session.OnError(session, err)
+				session.Stop()
+				session.OnDisconnected(session)
+				return
+			}
+
+			packet, err := parsePacketBody(session.socket.conn, packetSize)
+
+			if err != nil {
+				session.OnError(session, err)
+				session.Stop()
+				session.OnDisconnected(session)
+				return
+			}
+
+			session.OnRead(session, packet, packetSize)
 		}
-
-		packet, err := parsePacketBody(session.socket.conn, packetSize)
-
-		if err != nil {
-			session.OnError(session, err)
-			session.Close()
-			session.OnDisconnected(session)
-			return
-		}
-
-		session.OnRead(session, packet, packetSize)
 	}
 }
 
@@ -132,18 +138,13 @@ func (session *Session) GetMaxSendBuffSize() int {
 	return session.maxSendBuffSize
 }
 
-func (session *Session) GetId() int64 {
-	return session.id
-}
-
 func (session *Session) SendPacket(data []byte) {
 	packet := session.OnBuildPacket(data)
 	session.socket.SendPacket(packet)
 }
 
-func NewSession(settings SessionSettings, id int64, s *Socket) *Session {
+func NewSession(settings SessionSettings, s *Socket) *Session {
 	session := &Session{
-		id:     id,
 		socket: s,
 	}
 
