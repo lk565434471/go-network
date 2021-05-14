@@ -1,45 +1,95 @@
 package logger
 
 import (
+	"errors"
 	"github.com/sirupsen/logrus"
 	"io"
-	"os"
 )
+
+var defaultTimestampFormatter string = "2006-01-02 15:04:05.000"
+
+type LogSettings struct {
+	Settings logrus.Formatter
+	LogFileName string
+	LogFileNameSuffix string
+	LogPath string
+	Writer io.Writer
+	LogLevel logrus.Level
+}
 
 type Logger struct {
 	logrus.Logger
-	defaultTimestampFormat string
-	outputMode int
+	settings LogSettings
 }
 
-func (logger *Logger) Init(formatter logrus.Formatter) {
-	logger.SetFormatter(formatter)
-}
-
-func NewLogger(output io.Writer, level logrus.Level) *Logger {
+func NewLogger(settings LogSettings) *Logger {
 	logger := &Logger{}
 
-	logger.SetFormatter(&logrus.TextFormatter{
-		TimestampFormat: "2006-01-02 15:04:05.000",
-	})
+	if isJsonFormatter(settings.Settings) {
+		newSettings, err := buildJsonFormatter(settings)
 
-	logger.SetOutput(output)
-	logger.SetLevel(logrus.TraceLevel)
-	logger.SetReportCaller(true)
+		if err != nil {
+			return nil
+		}
+
+		logger.SetFormatter(newSettings)
+
+	} else if isTextFormatter(settings.Settings) {
+		newSettings, err := buildTextFormatter(settings)
+
+		if err != nil {
+			return nil
+		}
+
+		logger.SetFormatter(newSettings)
+	}
+
+	logger.SetLevel(settings.LogLevel)
+	logger.SetOutput(settings.Writer)
 
 	return logger
 }
 
-func NewStdoutLogger() *Logger {
-	return nil
+func isJsonFormatter(settings logrus.Formatter) bool {
+	_, ok := settings.(*logrus.JSONFormatter)
+
+	return ok
 }
 
-func NewFileLogger(path string) *Logger {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+func buildJsonFormatter(settings LogSettings) (*logrus.JSONFormatter, error) {
+	newSettings, ok := settings.Settings.(*logrus.JSONFormatter)
 
-	if err != nil {
-		return nil
+	if !ok {
+		return nil, errors.New("")
 	}
 
-	return NewLogger(f)
+	return newSettings, nil
+}
+
+func isTextFormatter(settings logrus.Formatter) bool {
+	_, ok := settings.(*logrus.TextFormatter)
+
+	return ok
+}
+
+func buildTextFormatter(settings LogSettings) (*logrus.TextFormatter, error) {
+	newSettings, ok := settings.Settings.(*logrus.TextFormatter)
+
+	if !ok {
+		return nil, errors.New("")
+	}
+
+	if !newSettings.DisableTimestamp && len(newSettings.TimestampFormat) == 0 {
+		newSettings.TimestampFormat = defaultTimestampFormatter
+	}
+
+	return newSettings, nil
+}
+
+func NewDefaultJsonFormatter() LogSettings {
+	return LogSettings{}
+}
+
+func NewDefaultTextFormatter() LogSettings {
+	return LogSettings{}
 }
