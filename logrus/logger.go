@@ -1,10 +1,10 @@
 package logger
 
 import (
-	"errors"
+	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
 	"github.com/sirupsen/logrus"
+	"go-network/utils"
 	"io"
-	"io/fs"
 	"os"
 )
 
@@ -12,12 +12,11 @@ var defaultTimestampFormatter string = "2006-01-02 15:04:05.000"
 
 type LogSettings struct {
 	Settings logrus.Formatter
-	LogFilename string
-	LogFilenameSuffix string
 	LogDir string
-	Writer io.Writer
+	LogFilename string
 	LogLevel logrus.Level
 	ReportCaller bool
+	EnableStdout bool
 }
 
 type Logger struct {
@@ -25,128 +24,62 @@ type Logger struct {
 	settings LogSettings
 }
 
-func NewLogger(settings LogSettings) *Logger {
+func NewLogger(settings LogSettings, options ...rotatelogs.Option) *Logger {
 	logger := &Logger{}
-
-	if isJsonFormatter(settings.Settings) {
-		newSettings, err := buildJsonFormatter(settings)
-
-		if err != nil {
-			return nil
-		}
-
-		logger.SetFormatter(newSettings)
-
-	} else if isTextFormatter(settings.Settings) {
-		newSettings, err := buildTextFormatter(settings)
-
-		if err != nil {
-			return nil
-		}
-
-		logger.SetFormatter(newSettings)
-	}
-
-	var writer io.Writer
-	writer, err := buildMultiWriter(settings)
-
-	if err != nil {
-		writer = os.Stdout
-	}
-
+	logger.SetFormatter(settings.Settings)
 	logger.SetLevel(settings.LogLevel)
-	logger.SetOutput(writer)
 	logger.SetReportCaller(settings.ReportCaller)
+
+	if settings.EnableStdout && settings.LogFilename != "" {
+		writer, err := createStdoutAndFileWriter(settings, options...)
+
+		if err != nil {
+			return nil
+		}
+
+		logger.SetOutput(writer)
+	} else if settings.LogFilename != "" {
+		writer, err := createFileWriter(settings, options...)
+
+		if err != nil {
+			return nil
+		}
+
+		logger.SetOutput(writer)
+
+	} else {
+		logger.SetOutput(os.Stdout)
+	}
 
 	return logger
 }
 
-func buildMultiWriter(settings LogSettings) (io.Writer, error) {
-	if settings.LogFilename == "" {
-		return nil, errors.New("")
+func createFileWriter(settings LogSettings, options ...rotatelogs.Option) (io.Writer, error) {
+	filename := utils.JoinPath(settings.LogDir, settings.LogFilename)
+
+	writer, err := rotatelogs.New(filename, options...)
+
+	if err != nil {
+		return nil, err
 	}
 
-	filenameSuffix := settings.LogFilenameSuffix
-	filename := settings.LogDir + settings.LogFilename + filenameSuffix + ".log"
+	return writer, nil
+}
 
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, fs.ModePerm)
+func createStdoutAndFileWriter(settings LogSettings,
+	options ...rotatelogs.Option) (io.Writer, error) {
+	writer, err := createFileWriter(settings, options...)
 
 	if err != nil {
 		return nil, err
 	}
 
 	writers := []io.Writer{
-		f, os.Stdout,
+		os.Stdout,
+		writer,
 	}
 
-	return io.MultiWriter(writers...), nil
-}
+	multiWriter := io.MultiWriter(writers...)
 
-func isJsonFormatter(settings logrus.Formatter) bool {
-	_, ok := settings.(*logrus.JSONFormatter)
-
-	return ok
-}
-
-func buildJsonFormatter(settings LogSettings) (*logrus.JSONFormatter, error) {
-	newSettings, ok := settings.Settings.(*logrus.JSONFormatter)
-
-	if !ok {
-		return nil, errors.New("")
-	}
-
-	if !newSettings.DisableTimestamp && len(newSettings.TimestampFormat) == 0 {
-		newSettings.TimestampFormat = defaultTimestampFormatter
-	}
-
-	return newSettings, nil
-}
-
-func isTextFormatter(settings logrus.Formatter) bool {
-	_, ok := settings.(*logrus.TextFormatter)
-
-	return ok
-}
-
-func buildTextFormatter(settings LogSettings) (*logrus.TextFormatter, error) {
-	newSettings, ok := settings.Settings.(*logrus.TextFormatter)
-
-	if !ok {
-		return nil, errors.New("")
-	}
-
-	if !newSettings.DisableTimestamp && len(newSettings.TimestampFormat) == 0 {
-		newSettings.TimestampFormat = defaultTimestampFormatter
-	}
-
-	return newSettings, nil
-}
-
-func NewDefaultJsonFormatter() LogSettings {
-	return LogSettings{
-		Settings: &logrus.JSONFormatter{
-				TimestampFormat: defaultTimestampFormatter,
-		},
-		LogLevel: logrus.TraceLevel,
-		Writer: os.Stdout,
-	}
-}
-
-func NewDefaultJsonLogger() *Logger {
-	return NewLogger(NewDefaultJsonFormatter())
-}
-
-func NewDefaultTextFormatter() LogSettings {
-	return LogSettings{
-		Settings: &logrus.TextFormatter{
-			TimestampFormat: defaultTimestampFormatter,
-			DisableSorting: true,
-		},
-		LogLevel: logrus.TraceLevel,
-		Writer: os.Stdout,
-	}
-}
-
-func NewDefaultTextLogger() *Logger {
-	return NewLogger(NewDefaultTextFormatter())
+	return multiWriter, nil
 }

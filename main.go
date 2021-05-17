@@ -3,29 +3,30 @@ package main
 import (
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
 	"github.com/sirupsen/logrus"
+	"go-network/application"
 	"time"
 )
 
-func init() {
-	path := "G:\\Go\\go-network\\test.log"
-	writer, err := rotatelogs.New(
-		path + ".%Y%m%d%H%M",
-		rotatelogs.WithMaxAge(time.Duration(180)*time.Second),
-		rotatelogs.WithRotationTime(time.Duration(2)*time.Second),
-	)
+func main() {
+	app := application.GetApp()()
 
-	if err != nil {
+	if !app.Init(application.AppSettings{
+		AppLogSettings: application.AppLogSettings{
+			LogFormatter: &logrus.TextFormatter{},
+			LoggingLevel: logrus.TraceLevel,
+			LogFilename: "test.log.%Y-%m-%d",
+			ReportCaller: true,
+			EnableStdout: true,
+			Options: []rotatelogs.Option{
+				rotatelogs.WithMaxAge(time.Hour * 24 * 180),
+				rotatelogs.WithRotationTime(time.Hour * 24),
+			},
+		},
+	}) {
 		return
 	}
 
-	logrus.SetLevel(logrus.TraceLevel)
-	logrus.SetOutput(writer)
-}
+	app.Debug("Hello, world.")
 
-func main() {
-
-	for  {
-		logrus.Debug("Hello, world.")
-		time.Sleep(5 * time.Second)
-	}
+	app.Run()
 }
